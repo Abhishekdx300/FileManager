@@ -1,12 +1,21 @@
 package FileManager;
 
+import AccessControl.*;
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.*;
-import java.util.Scanner;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Optional;
 
 
+@Slf4j
 public class FileManager {
     private String currentPath;
     private final String rootPath;
+    private final PersistenceManager persistenceManager;
+    private final FileAccessControl accessControl;
 
     // TODO: Add all necessary components here..so we can use them in the operation function.
 
@@ -15,38 +24,63 @@ public class FileManager {
         this.rootPath = tempPath.replace("\\", "/");
         File rootDir = new File(rootPath);
         if (!rootDir.exists()) {
-            rootDir.mkdir();
+            boolean created = rootDir.mkdir();
+            if(!created) throw new RuntimeException("Failed to initialize root directory");
         }
         this.currentPath = rootPath;
+        this.persistenceManager = new PersistenceManager();
+        this.accessControl = new FileAccessControl(
+                persistenceManager.loadUsers(),
+                persistenceManager.loadGroups(),
+                persistenceManager.loadFileMetadata()
+        );
+        persistUserData();
+    }
+
+
+    public boolean isAuthenticated(){
+        return accessControl.isAuthenticated();
+    }
+    public boolean authenticate(String username, String password){
+        return accessControl.authenticate(username,password);
+    }
+    public void logout(){
+        accessControl.logout();
+    }
+
+    private void persistUserData(){
+        accessControl.getCurrentUser().ifPresent(_-> persistenceManager.saveAll(
+                accessControl.getUsers(),
+                accessControl.getGroups(),
+                accessControl.getFileMetadataMap()
+        ));
+    }
+    private boolean isValidTextFile(String filename){
+        return filename.endsWith(".txt") &&
+                !filename.contains("/");
+    }
+
+
+    public Optional<String> readFile(String fileName) {
+        if(!accessControl.checkPermission(fileName,FileOperation.READ)){
+            return Optional.empty();
+        }
+            String fp = currentPath + "/" + fileName;
+        try{
+            Path filePath = Paths.get(fp);
+            return Optional.of(Files.readString(filePath));
+
+        }catch (IOException e){
+            return Optional.empty();
+        }
 
     }
 
-    public String readFile(String fileName) {
+    public boolean writeFile(String fileName, String content) {
             String filePath = currentPath + "/" + fileName;
-            if (!fileName.endsWith(".txt")) {
-                return "Error: Only .txt files are supported";
-            }
 
-            File file = new File(filePath);
-            if (!file.exists()) {
-                return "Error: File does not exist";
-            }
-
-        try (Scanner scanner = new Scanner(new FileInputStream(file))) {
-            StringBuilder content = new StringBuilder();
-            while (scanner.hasNextLine()) {
-                content.append(scanner.nextLine()).append("\n");
-            }
-            return content.toString();
-            } catch (IOException e) {
-                return "Error reading file: " + e.getMessage();
-            }
-    }
-
-    public String writeFile(String fileName, String content) {
-            String filePath = currentPath + "/" + fileName;
-            if (!fileName.endsWith(".txt")) {
-                return "Error: Only .txt files are supported";
+            if(!accessControl.checkPermission(fileName,FileOperation.WRITE)){
+                return false;
             }
 
             File file = new File(filePath);
@@ -56,45 +90,52 @@ public class FileManager {
                 randomAccessFile.setLength(0);
                 writer.write(content);
                 writer.flush();
-                return "File written successfully";
+                return true;
             } catch (Exception e) {
-                return "Error writing to file: " + e.getMessage();
+                return false;
             }
     }
 
-    public String deleteFile(String fileName) {
+    public boolean deleteFile(String fileName) {
             String filePath = currentPath + "/" + fileName;
-            if (!fileName.endsWith(".txt")) {
-                return "Error: Only .txt files are supported";
+            if(!accessControl.checkPermission(fileName,FileOperation.WRITE)){
+                return false;
             }
-
             File file = new File(filePath);
             if (!file.exists()) {
-                return "Error: File does not exist";
+                return false;
             }
 
             try {
                 if (file.delete()) {
-                    return "File deleted successfully";
+                    Optional<FileMetadata> fileMetadata = accessControl.getFileMetadata(fileName);
+                    fileMetadata.ifPresent(metadata -> accessControl.updateUserGroupFileNo(metadata, -1));
+
+                    accessControl.removeFileMetadata(fileName);
+                    persistUserData();
+                    return true;
                 } else {
-                    return "Error: Unable to delete file";
+                    return false;
                 }
             } catch (Exception e) {
-                return "Error deleting file: " + e.getMessage();
+                return false;
             }
     }
 
-    public void createFile(String fileName) {
+    public boolean createFile(String fileName) {
+        if(!isValidTextFile(fileName)) return false;
         try {
             File file = new File(currentPath + "/" + fileName);
             if (file.createNewFile()) {
-                System.out.println("File created successfully: " + file.getName());
+                FileMetadata fileMetadata = accessControl.createFileMetadata(fileName);
+                accessControl.updateUserGroupFileNo(fileMetadata, 1);
+                persistUserData();
+                return true;
             } else {
-                System.out.println("File already exists.");
+                return false;
             }
         } catch (IOException e) {
-            System.out.println("An error occurred while creating the file.");
-            e.printStackTrace();
+            return false;
         }
     }
 
@@ -167,6 +208,51 @@ public class FileManager {
             return "/";
         }
         return "/" + currentPath.substring(rootPath.length() + 1).replace("\\", "/");
+    }
+
+    public boolean createUser(String username, String password){
+        if(username.isEmpty() || password.isEmpty()) return false;
+        return accessControl.addUser(username,password);
+    }
+
+    public boolean createGroup(String groupname){
+        if(groupname.isEmpty()) return false;
+        return accessControl.addGroup(groupname);
+    }
+    public boolean addUserToGroup(String username, String groupname){
+        if(username.isEmpty() || groupname.isEmpty()) return false;
+        return accessControl.addUserToGroup(username,groupname);
+    }
+    public boolean removeUserFromGroup(String username, String groupname){
+        if(username.isEmpty() || groupname.isEmpty()) return false;
+        return accessControl.removeUserFromGroup(username,groupname);
+    }
+    public boolean changeFileMode(String filename,int num){
+
+        int usrMode = num/100;
+        int grpMode = (num/10)%10;
+        int othMode = num%10;
+        if(filename.isEmpty() || InvalidMode(usrMode) || InvalidMode(grpMode) || InvalidMode(othMode)) return false;
+
+        boolean result = accessControl.chmod(filename,usrMode,grpMode,othMode);
+        persistUserData();
+        return result;
+    }
+    public boolean changeFileOwner(String filename, String newOwner){
+        if(filename.isEmpty() || newOwner.isEmpty()) return false;
+        boolean result =  accessControl.changeOwner(filename,newOwner);
+        persistUserData();
+        return result;
+    }
+    public boolean changeFileGroup(String filename, String newGroup){
+        if(filename.isEmpty() || newGroup.isEmpty()) return false;
+        boolean result =  accessControl.changeGroup(filename,newGroup);
+        persistUserData();
+        return result;
+    }
+
+    private boolean InvalidMode(int num){
+        return num < 1 || num > 7;
     }
 
 }

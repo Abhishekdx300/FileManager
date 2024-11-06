@@ -1,6 +1,7 @@
 # File Manager
 - final year project for NITA CSE'25.
 - limited to only .txt files
+- "fs" is only for all the files/directories created(No code here).
 ___
 
 

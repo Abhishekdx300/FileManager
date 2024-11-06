@@ -17,7 +17,7 @@ ___
 
 ## TODO:
 
-### 1. Access Control for files:
+###  1. Access Control for files:   
 - create user auth system
 - make access control calls before every file operation.
 - make ACL for managing them.
@@ -46,16 +46,16 @@ directories or global search.
 
 ### Extras (if needed):
 - Thread pooling and multithreading for whole application.
-- Normal UI using ony java.
+- Normal UI using only java.
 - converting TCP accessible application.
 
 ---
 
 ## Tasks Status:
 
-- Access Control: 
-- Search:
-- Compressor:
-- Encryptor:
-- File Versioning:
-- Enhancing:
+- [x] Access Control: ~Abhishek 
+- [ ] Search:
+- [ ] Compressor:
+- [ ] Encryptor:
+- [ ] File Versioning:
+- [ ] Enhancing:

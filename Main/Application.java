@@ -1,9 +1,8 @@
 package Main;
 
-import java.io.IOException;
 import java.util.Optional;
 import java.util.Scanner;
-import FileManager.FileManager;
+import FilesManager.FileManager;
 
 public class Application {
     // delete user & group -- need to store reference to file to delete files or remove groupinfo from metadata and user

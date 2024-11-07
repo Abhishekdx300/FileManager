@@ -8,7 +8,7 @@ ___
 ## How to Add Features:
 - Make separate packages and class for each major feature.
 - Implement the logic in them.
-- add the class object and use the public funcs in FileManager class.
+- add the class object and use the public funcs in FilesManager class.
 - Add options in Main.Application.Init()  func.
 - Test the whole working aspect before pushing changes to main branch.
 
